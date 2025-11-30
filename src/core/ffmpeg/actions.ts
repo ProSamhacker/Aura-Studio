@@ -142,3 +142,58 @@ export async function compressVideo(
     ffmpeg.off('progress', progressListener);
   }
 }
+// Add this to src/core/ffmpeg/actions.ts
+
+export async function mergeAudioWithVideo(
+  videoUrl: string,
+  audioUrl: string,
+  onProgress: (progress: number) => void
+): Promise<string> {
+  const ffmpeg = await FFmpegClient.getInstance();
+  const videoName = `video_${Date.now()}.mp4`;
+  const audioName = `audio_${Date.now()}.mp3`;
+  const outputName = `final_${Date.now()}.mp4`;
+
+  onProgress(0);
+  
+  const progressListener = ({ progress }: { progress: number }) => {
+    onProgress(Math.round(progress * 100));
+  };
+  ffmpeg.on('progress', progressListener);
+
+  try {
+    // 1. Write both files to memory
+    await ffmpeg.writeFile(videoName, await fetchFile(videoUrl));
+    await ffmpeg.writeFile(audioName, await fetchFile(audioUrl));
+
+    // 2. Run Merge Command
+    // -map 0:v = Take video from first input
+    // -map 1:a = Take audio from second input (Replces original audio)
+    // -c:v copy = Don't re-encode video (Super Fast!)
+    // -shortest = Stop when the shortest input ends
+    await ffmpeg.exec([
+      '-i', videoName,
+      '-i', audioName,
+      '-c:v', 'copy', 
+      '-c:a', 'aac',
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-shortest',
+      outputName
+    ]);
+
+    // 3. Read Result
+    const data = await ffmpeg.readFile(outputName);
+    const blob = new Blob([data as any], { type: 'video/mp4' });
+    return URL.createObjectURL(blob);
+
+  } finally {
+    // Cleanup
+    try {
+        await ffmpeg.deleteFile(videoName);
+        await ffmpeg.deleteFile(audioName);
+        await ffmpeg.deleteFile(outputName);
+    } catch(e) {}
+    ffmpeg.off('progress', progressListener);
+  }
+}

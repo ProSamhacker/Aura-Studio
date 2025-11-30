@@ -1,14 +1,22 @@
 import React from 'react';
-import { AbsoluteFill, Video, Audio, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Video, Audio, useCurrentFrame, useVideoConfig } from 'remotion';
+import { Caption } from '@/core/stores/useTimelineStore';
 
 interface VideoCompositionProps {
   videoUrl: string | null;
   audioUrl: string | null;
-  captions: string | null; // We will add logic for this later
+  captions: Caption[]; // <--- UPDATED: Now accepts the real caption array
 }
 
 export const VideoComposition: React.FC<VideoCompositionProps> = ({ videoUrl, audioUrl, captions }) => {
+  const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const currentTime = frame / fps;
+
+  // Find the caption for the current second
+  const activeCaption = Array.isArray(captions) 
+    ? captions.find((c) => currentTime >= c.start && currentTime <= c.end)
+    : null;
 
   if (!videoUrl) {
     return (
@@ -20,24 +28,29 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ videoUrl, au
 
   return (
     <AbsoluteFill className="bg-black">
-      {/* LAYER 1: The Main Video */}
-      <Video src={videoUrl} className="w-full h-full object-cover" />
+      {/* LAYER 1: The Video (MUTED if AI Audio is present) */}
+      <Video 
+        src={videoUrl} 
+        className="w-full h-full object-cover"
+        // CRITICAL FIX: This line replaces the original audio with the AI voice
+        volume={audioUrl ? 0 : 1} 
+      />
 
-      {/* LAYER 2: The AI Voiceover (Hidden Audio) */}
+      {/* LAYER 2: The AI Voiceover */}
       {audioUrl && <Audio src={audioUrl} />}
 
-      {/* LAYER 3: Overlay Text / Captions */}
-      {captions && (
+      {/* LAYER 3: Auto-Captions */}
+      {activeCaption && (
         <AbsoluteFill className="justify-end items-center pb-20">
-           <div className="bg-black/70 px-6 py-3 rounded-xl">
-              <p className="text-white text-2xl font-bold font-sans text-center leading-relaxed">
-                {captions}
+           <div className="bg-black/60 backdrop-blur-sm px-6 py-4 rounded-2xl border border-white/10 shadow-2xl">
+              <p className="text-yellow-400 text-3xl font-black font-sans text-center uppercase tracking-wider drop-shadow-md">
+                {activeCaption.text}
               </p>
            </div>
         </AbsoluteFill>
       )}
       
-      {/* LAYER 4: Watermark (Example) */}
+      {/* LAYER 4: Watermark */}
       <div className="absolute top-10 right-10 opacity-50">
         <p className="text-white font-bold tracking-widest">AURA STUDIO</p>
       </div>

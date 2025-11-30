@@ -8,6 +8,11 @@ export interface Clip {
   end: number;
   layer: number;
 }
+export interface Caption {
+  start: number; // Seconds (e.g., 1.5)
+  end: number;   // Seconds (e.g., 3.2)
+  text: string;  // The spoken words
+}
 
 interface TimelineState {
   // Video State
@@ -16,6 +21,9 @@ interface TimelineState {
   // Script State
   generatedScript: string;
   
+  captions: Caption[];
+  setCaptions: (captions: Caption[]) => void;
+
   // Audio State (NEW)
   audioUrl: string | null;
 
@@ -45,7 +53,9 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   clips: [],
   isPlaying: false,
   currentTime: 0,
+  captions: [],
 
+  setCaptions: (captions) => set({ captions }),
   // Actions implementation
   setOriginalVideo: (url) => set({ originalVideoUrl: url }),
   setScript: (script) => set({ generatedScript: script }),

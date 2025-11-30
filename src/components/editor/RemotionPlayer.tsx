@@ -5,7 +5,8 @@ import { useTimelineStore } from '@/core/stores/useTimelineStore';
 import { VideoComposition } from './VideoComposition';
 
 export const RemotionPlayer = () => {
-  const { originalVideoUrl, audioUrl, generatedScript } = useTimelineStore();
+  // 1. Grab all the live data from the store
+  const { originalVideoUrl, audioUrl, captions } = useTimelineStore();
 
   // Default dimensions (16:9)
   const width = 1920;
@@ -17,11 +18,10 @@ export const RemotionPlayer = () => {
         component={VideoComposition}
         inputProps={{
           videoUrl: originalVideoUrl,
-          audioUrl: audioUrl,
-          // For now, we pass a dummy caption to test the overlay
-          captions: originalVideoUrl ? "AI Captions will appear here..." : null,
+          audioUrl: audioUrl, // <--- Passing the AI Audio URL
+          captions: captions || [], // <--- Passing the Real Captions
         }}
-        durationInFrames={30 * 60} // Default 60 seconds (we will make this dynamic later)
+        durationInFrames={30 * 60} // Default 60s (In a real app, this should match video duration)
         fps={30}
         compositionWidth={width}
         compositionHeight={height}
