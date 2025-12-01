@@ -20,13 +20,18 @@ interface TimelineState {
   captions: Caption[];
   audioUrl: string | null;
   
-  // Editor State
   clips: Clip[];
   isPlaying: boolean;
-  currentTime: number; // Current playback time in seconds
-  duration: number;    // Total duration in seconds
-  fps: number;         // Frames Per Second
-  
+  currentTime: number;
+  duration: number;
+  fps: number;
+  zoomLevel: number; // Pixels per second
+
+  // --- NEW: Trim State for Main Video ---
+  // startOffset: How many seconds into the source video we start playing (Trimming the beginning)
+  // endOffset: At what source time we stop playing (Trimming the end)
+  videoTrim: { start: number; end: number }; 
+
   // Actions
   setOriginalVideo: (url: string) => void;
   setScript: (script: string) => void;
@@ -37,7 +42,9 @@ interface TimelineState {
   
   setIsPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
-  setDuration: (duration: number) => void; // <--- NEW
+  setDuration: (duration: number) => void;
+  setZoomLevel: (zoom: number) => void;
+  setVideoTrim: (start: number, end: number) => void; // <--- NEW ACTION
 }
 
 export const useTimelineStore = create<TimelineState>((set) => ({
@@ -49,8 +56,12 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   
   isPlaying: false,
   currentTime: 0,
-  duration: 60, // Default duration to avoid 0 division
+  duration: 60,
   fps: 30,
+  zoomLevel: 30,
+  
+  // Default trim is 0 to infinity (will be capped by actual duration on load)
+  videoTrim: { start: 0, end: 0 }, 
 
   setOriginalVideo: (url) => set({ originalVideoUrl: url }),
   setScript: (script) => set({ generatedScript: script }),
@@ -60,6 +71,14 @@ export const useTimelineStore = create<TimelineState>((set) => ({
   addClip: (clip) => set((state) => ({ clips: [...state.clips, clip] })),
   
   setIsPlaying: (isPlaying) => set({ isPlaying }),
-  setCurrentTime: (currentTime) => set({ currentTime }),
-  setDuration: (duration) => set({ duration }),
+  setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
+  setDuration: (duration) => set({ duration, videoTrim: { start: 0, end: duration } }), // Reset trim on new video
+  setZoomLevel: (zoomLevel) => set({ zoomLevel: Math.max(10, Math.min(200, zoomLevel)) }),
+  
+  setVideoTrim: (start, end) => set((state) => ({ 
+    videoTrim: { 
+      start: Math.max(0, start), 
+      end: Math.min(state.duration, Math.max(start + 1, end)) // Ensure end > start
+    } 
+  })),
 }));

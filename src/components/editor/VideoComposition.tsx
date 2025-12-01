@@ -5,7 +5,7 @@ import { Caption } from '@/core/stores/useTimelineStore';
 interface VideoCompositionProps {
   videoUrl: string | null;
   audioUrl: string | null;
-  captions: Caption[]; // <--- UPDATED: Now accepts the real caption array
+  captions: Caption[]; 
 }
 
 export const VideoComposition: React.FC<VideoCompositionProps> = ({ videoUrl, audioUrl, captions }) => {
@@ -31,7 +31,8 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({ videoUrl, au
       {/* LAYER 1: The Video (MUTED if AI Audio is present) */}
       <Video 
         src={videoUrl} 
-        className="w-full h-full object-cover"
+        // FIX: object-contain ensures the entire video is visible regardless of aspect ratio
+        className="w-full h-full object-contain"
         // CRITICAL FIX: This line replaces the original audio with the AI voice
         volume={audioUrl ? 0 : 1} 
       />
