@@ -1,258 +1,166 @@
+// src/app/page.tsx
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { useTimelineStore } from '@/core/stores/useTimelineStore';
-import { FFmpegClient } from '@/core/ffmpeg/client';
-import { compressVideo, mergeAudioWithVideo } from '@/core/ffmpeg/actions';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { ToolPanel } from '@/components/layout/ToolPanel';
-import { Canvas } from '@/components/studio/Canvas'; // Implemented Canvas component
-import { Timeline } from '@/components/studio/Timeline';
-import { TimelineControls } from '@/components/studio/TimelineControls';
-import { Download, Loader2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { 
+  Video, 
+  Wand2, 
+  Search, 
+  Plus, 
+  LayoutTemplate, 
+  Settings, 
+  FolderOpen,
+  Home,
+  UserCircle,
+  MoreVertical,
+  Play
+} from 'lucide-react';
 
-export default function StudioPage() {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  const [activeTool, setActiveTool] = useState('upload');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [previewVoiceUrl, setPreviewVoiceUrl] = useState<string | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [ready, setReady] = useState(false);
-  
-  const COMPRESSION_THRESHOLD = 100 * 1024 * 1024; 
+export default function Dashboard() {
+  const router = useRouter();
 
-  const { 
-    setOriginalVideo, originalVideoUrl, setScript, appendScript, generatedScript,
-    audioUrl, setAudio, setCaptions,
-    setIsPlaying, setCurrentTime, setDuration
-  } = useTimelineStore();
-
-  useEffect(() => {
-    FFmpegClient.getInstance().then(() => setReady(true)).catch(e => console.error(e));
-  }, []);
-
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve((reader.result as string).split(',')[1]);
-      reader.onerror = reject;
-    });
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    const url = URL.createObjectURL(file);
-    setOriginalVideo(url);
-    setCaptions([]);
-    setAudio("");
-    setPreviewVoiceUrl(null);
-    setCurrentTime(0);
-    setIsPlaying(false);
-    
-    const video = document.createElement('video');
-    video.src = url;
-    video.onloadedmetadata = () => {
-        if(isFinite(video.duration)) setDuration(video.duration);
-    };
-    
-    setActiveTool('script'); 
-    await analyzeVideo(file);
-  };
-
-  const analyzeVideo = async (file: File) => {
-    setIsAnalyzing(true);
-    const { setScript, appendScript } = useTimelineStore.getState();
-    try {
-      let base64Video = "";
-      if (file.size > COMPRESSION_THRESHOLD) {
-        setIsProcessing(true); setProgress(0);
-        const rawUrl = URL.createObjectURL(file);
-        const compressedBlob = await compressVideo(rawUrl, (pct) => setProgress(pct));
-        base64Video = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(compressedBlob);
-            reader.onload = () => resolve((reader.result as string).split(',')[1]);
-        });
-        setIsProcessing(false); 
-      } else {
-        base64Video = await fileToBase64(file);
-      }
-
-      const response = await fetch('/api/ai/analyze', {
-        method: 'POST',
-        body: JSON.stringify({ 
-            prompt: "Analyze this video and write a synchronized voiceover script. format: **(0:00 - 0:00)** \"Spoken Text\". Do not provide a summary, mood, or intro text. Output ONLY the script.",
-            videoData: base64Video, 
-            mimeType: file.type 
-        }),
-      });
-      
-      if (!response.ok) throw new Error("API Error");
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-      
-      setScript(''); 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-       let chunk = decoder.decode(value, { stream: true });
-        
-        chunk = chunk
-            .replace(/[#"*]/g, "")      
-            .replace(/\*\*/g, "")       
-            .replace(/###/g, "")        
-            .replace(/^Title:/gm, "")   
-            .replace(/^Summary:/gm, "") 
-
-        appendScript(chunk);
-      }
-    } catch (err) { console.error(err); } 
-    finally { setIsAnalyzing(false); setIsProcessing(false); }
-  };
-
- const handleGenerateVoice = async () => {
-    if (!generatedScript) return;
-    setIsGeneratingVoice(true);
-    
-    try {
-       const lines = generatedScript.split('\n');
-       const cleanLines = lines
-        .map(line => line.replace(/^[\s-]*[\(\[]?\d{1,2}:\d{2}(?:.*?)[\)\]]?:?\s*/, "").trim())
-        .filter(line => line.length > 0);
-
-       const textToRead = cleanLines.join(' ');
-       if (textToRead.length < 2) throw new Error("Script is empty.");
-
-       const response = await fetch('/api/ai/voice', {
-         method: 'POST',
-         body: JSON.stringify({ text: textToRead, voiceId: "pNInz6obpgDQGcFmaJgB" }),
-       });
-       
-       if (!response.ok) throw new Error('Failed');
-       const blob = await response.blob();
-       setPreviewVoiceUrl(URL.createObjectURL(blob));
-       
-    } catch (e) { 
-        alert("Voice generation failed"); 
-        console.error(e); 
-    } finally { 
-        setIsGeneratingVoice(false); 
-    }
-  };
-
-  const handleApplyVoice = () => {
-      if (previewVoiceUrl) {
-          setAudio(previewVoiceUrl);
-          setCaptions([]); 
-          setPreviewVoiceUrl(null); 
-      }
-  };
-
-  // --- UPDATED: Caption generation with filtering ---
-  const handleAutoCaption = async () => {
-    let mediaToTranscribe = audioUrl || originalVideoUrl;
-    let mimeType = audioUrl ? 'audio/mpeg' : 'video/mp4';
-    if (!mediaToTranscribe) return;
-    
-    setIsTranscribing(true);
-    try {
-       const responseMedia = await fetch(mediaToTranscribe);
-       const blob = await responseMedia.blob();
-       const base64Data = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.readAsDataURL(blob);
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-       });
-
-       const response = await fetch('/api/ai/transcribe', {
-         method: 'POST',
-         body: JSON.stringify({ mediaData: base64Data, mimeType: mimeType }),
-       });
-       
-       const data = await response.json();
-       
-       // Filter out garbage captions (numbers, timecodes, empty strings)
-       const cleanCaptions = data.captions
-        .map((c: any) => ({ ...c, start: parseFloat(c.start), end: parseFloat(c.end) }))
-        .filter((c: any) => {
-            const text = c.text.trim();
-            // Reject purely numeric strings (e.g. "004", "2024")
-            if (/^\d+$/.test(text)) return false; 
-            // Reject timecode-like strings (e.g. "00:04", "1:30")
-            if (/^\d{1,2}:\d{2}$/.test(text)) return false;
-            return text.length > 0;
-        });
-
-       setCaptions(cleanCaptions);
-    } catch (e) { 
-        console.error(e);
-        alert("Transcription failed"); 
-    } 
-    finally { setIsTranscribing(false); }
-  };
-
-  const handleFinalExport = async () => {
-      if (!originalVideoUrl || !audioUrl) return;
-      setIsProcessing(true);
-      try {
-        const finalUrl = await mergeAudioWithVideo(originalVideoUrl, audioUrl, (pct) => setProgress(pct));
-        const a = document.createElement('a'); a.href = finalUrl; a.download = 'final.mp4'; a.click();
-      } catch (e) { alert("Export failed"); } finally { setIsProcessing(false); }
+  const handleCreateNew = () => {
+    // Generate a random ID for the new projectnpm
+    const newProjectId = Math.random().toString(36).substring(7);
+    router.push(`/project/${newProjectId}`);
   };
 
   return (
-    <div className="flex h-screen bg-[#0E0E0E] text-white overflow-hidden font-sans selection:bg-purple-500/30">
+    <div className="flex h-screen bg-[#0E0E0E] text-white font-sans">
       
-      {/* ZONE A: SIDEBAR */}
-      <Sidebar activeTool={activeTool} setActiveTool={setActiveTool} />
-
-      {/* ZONE B: TOOL PANEL */}
-      <ToolPanel 
-         activeTool={activeTool}
-         isAnalyzing={isAnalyzing}
-         isGeneratingVoice={isGeneratingVoice}
-         isTranscribing={isTranscribing}
-         previewVoiceUrl={previewVoiceUrl}
-         handleGenerateVoice={handleGenerateVoice}
-         handleApplyVoice={handleApplyVoice}
-         handleAutoCaption={handleAutoCaption}
-         fileInputRef={fileInputRef}
-         handleFileSelect={handleFileSelect}
-      />
-
-      {/* ZONE C: MAIN STAGE */}
-      <div className="flex-1 flex flex-col relative min-w-0">
-        
-        {/* Header Area */}
-        <div className="h-14 border-b border-[#1f1f1f] flex items-center justify-between px-6 bg-[#0F0F0F] shrink-0">
-            <span className="text-xs font-medium text-gray-400">Project: Aura Studio</span>
-            <button 
-                onClick={handleFinalExport}
-                disabled={isProcessing || !audioUrl}
-                className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2"
-            >
-                {isProcessing ? <Loader2 className="animate-spin w-3 h-3"/> : <Download className="w-3 h-3"/>}
-                Export
-            </button>
+      {/* 1. DASHBOARD SIDEBAR */}
+      <div className="w-64 border-r border-[#1f1f1f] flex flex-col p-4 shrink-0">
+        <div className="flex items-center gap-2 mb-8 px-2 text-purple-500 font-bold text-xl tracking-wider">
+           <Video className="w-6 h-6" /> AURA
         </div>
 
-        {/* --- REPLACED CANVAS AREA --- */}
-        {/* We use the Canvas component which handles the Player, Zoom, and Empty States */}
-        <Canvas isProcessing={isProcessing} progress={progress} />
+        <nav className="space-y-1 flex-1">
+          <SidebarItem icon={Home} label="Home" active />
+          <SidebarItem icon={LayoutTemplate} label="Templates" />
+          <SidebarItem icon={FolderOpen} label="Folders" />
+          <SidebarItem icon={Settings} label="Settings" />
+        </nav>
 
-        {/* ZONE D: TIMELINE AREA */}
-        <TimelineControls />
-        <Timeline />
+        <div className="mt-auto pt-4 border-t border-[#1f1f1f]">
+           <button className="flex items-center gap-3 px-3 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-[#1a1a1a] rounded-lg w-full transition">
+              <UserCircle className="w-5 h-5" />
+              <span>My Account</span>
+           </button>
+        </div>
+      </div>
 
+      {/* 2. MAIN CONTENT AREA */}
+      <div className="flex-1 overflow-y-auto">
+        
+        {/* Top Header */}
+        <header className="h-16 border-b border-[#1f1f1f] flex items-center justify-between px-8 sticky top-0 bg-[#0E0E0E]/80 backdrop-blur-md z-10">
+           <div className="relative w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+              <input 
+                type="text" 
+                placeholder="Search projects..." 
+                className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-full pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition"
+              />
+           </div>
+           <div className="flex items-center gap-4">
+              <button className="bg-gradient-to-r from-purple-600 to-blue-600 px-4 py-1.5 rounded-full text-xs font-bold hover:opacity-90 transition">
+                Upgrade Plan
+              </button>
+              <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-xs border border-purple-500/30">
+                S
+              </div>
+           </div>
+        </header>
+
+        {/* Content Body */}
+        <div className="p-8 max-w-7xl mx-auto space-y-10">
+          
+          {/* Welcome Section */}
+          <div>
+            <h1 className="text-3xl font-bold mb-6">Good to see you again</h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* BIG CREATE BUTTON */}
+              <button 
+                onClick={handleCreateNew}
+                className="group relative h-48 rounded-2xl bg-gradient-to-br from-purple-600 to-blue-700 p-6 flex flex-col justify-between overflow-hidden hover:scale-[1.01] transition-all duration-300 shadow-2xl shadow-purple-900/20"
+              >
+                <div className="relative z-10">
+                   <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mb-4 group-hover:bg-white text-white group-hover:text-purple-600 transition-colors">
+                      <Plus className="w-6 h-6" />
+                   </div>
+                   <h2 className="text-2xl font-bold text-white">Create a new video</h2>
+                   <p className="text-purple-100/80 mt-1">Start from scratch</p>
+                </div>
+                {/* Decorative Background Elements */}
+                <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all"></div>
+              </button>
+
+              {/* AI BUTTON */}
+              <button 
+                onClick={handleCreateNew} // For now, leads to same studio
+                className="group relative h-48 rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] hover:border-purple-500/50 p-6 flex flex-col justify-between overflow-hidden hover:scale-[1.01] transition-all duration-300"
+              >
+                 <div className="relative z-10">
+                   <div className="w-12 h-12 bg-purple-500/10 rounded-full flex items-center justify-center mb-4 text-purple-400">
+                      <Wand2 className="w-6 h-6" />
+                   </div>
+                   <h2 className="text-2xl font-bold text-white">Create with AI</h2>
+                   <p className="text-gray-400 mt-1">Auto-compose using your own media</p>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Recent Projects Section */}
+          <div>
+             <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold">Your videos</h2>
+                <button className="text-sm text-purple-400 hover:text-purple-300">View all</button>
+             </div>
+
+             {/* Mock Project Grid */}
+             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {[1, 2, 3, 4].map((item) => (
+                   <div key={item} className="group cursor-pointer">
+                      <div className="aspect-video bg-[#1a1a1a] rounded-xl border border-[#2a2a2a] group-hover:border-purple-500/50 overflow-hidden relative mb-3 transition">
+                         {/* Placeholder Thumbnail */}
+                         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/40 transition backdrop-blur-sm">
+                            <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg transform scale-90 group-hover:scale-100 transition">
+                               <Play className="w-4 h-4 text-black ml-0.5" />
+                            </div>
+                         </div>
+                      </div>
+                      <div className="flex items-start justify-between px-1">
+                         <div>
+                            <h3 className="font-medium text-sm text-gray-200 group-hover:text-purple-400 transition">Untitled Video {item}</h3>
+                            <p className="text-xs text-gray-500 mt-0.5">Edited 2 hours ago</p>
+                         </div>
+                         <button className="text-gray-500 hover:text-white">
+                            <MoreVertical className="w-4 h-4" />
+                         </button>
+                      </div>
+                   </div>
+                ))}
+             </div>
+          </div>
+
+        </div>
       </div>
     </div>
+  );
+}
+
+// Helper Component for Sidebar
+function SidebarItem({ icon: Icon, label, active = false }: { icon: any, label: string, active?: boolean }) {
+  return (
+    <button className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition ${
+      active 
+        ? 'bg-purple-600/10 text-purple-400 border border-purple-500/10' 
+        : 'text-gray-400 hover:text-white hover:bg-[#1a1a1a]'
+    }`}>
+      <Icon className={`w-5 h-5 ${active ? 'text-purple-400' : 'text-gray-500'}`} />
+      {label}
+    </button>
   );
 }
