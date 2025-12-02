@@ -10,6 +10,7 @@ export interface Clip {
   end: number;
   layer: number;
 }
+
 export interface Caption {
   start: number;
   end: number;
@@ -28,14 +29,14 @@ interface TimelineState {
   duration: number;
   fps: number;
   zoomLevel: number;
-  videoTrim: { start: number; end: number }; 
+  videoTrim: { start: number; end: number };
 
   // Actions
   setOriginalVideo: (url: string) => void;
   setScript: (script: string) => void;
   appendScript: (text: string) => void;
   setCaptions: (captions: Caption[]) => void;
-  updateCaption: (index: number, text: string) => void; // <--- NEW ACTION
+  updateCaption: (index: number, text: string) => void;
   setAudio: (url: string) => void;
   addClip: (clip: Clip) => void;
   
@@ -44,76 +45,133 @@ interface TimelineState {
   setDuration: (duration: number) => void;
   setZoomLevel: (zoom: number) => void;
   setVideoTrim: (start: number, end: number) => void;
+  
+  // Reset function
+  resetProject: () => void;
 }
 
-// Wrap the store in "persist" to save it to LocalStorage
+const initialState = {
+  originalVideoUrl: null,
+  generatedScript: "",
+  audioUrl: null,
+  clips: [],
+  captions: [],
+  isPlaying: false,
+  currentTime: 0,
+  duration: 60,
+  fps: 30,
+  zoomLevel: 30,
+  videoTrim: { start: 0, end: 60 },
+};
+
 export const useTimelineStore = create<TimelineState>()(
   persist(
-    (set) => ({
-      originalVideoUrl: null,
-      generatedScript: "",
-      audioUrl: null,
-      clips: [],
-      captions: [],
-      
-      isPlaying: false,
-      currentTime: 0,
-      duration: 60,
-      fps: 30,
-      zoomLevel: 30,
-      videoTrim: { start: 0, end: 0 }, 
+    (set, get) => ({
+      ...initialState,
 
-      // --- 1. PROXY LOGIC (For Google Drive playback) ---
       setOriginalVideo: (url) => {
+        // Only proxy Drive URLs
         if (url && (url.includes('drive.google.com') || url.includes('googleusercontent.com'))) {
-            // Wrap it in our local proxy to fix CORS headers
-            const proxyUrl = `/api/video-proxy?url=${encodeURIComponent(url)}`;
-            set({ originalVideoUrl: proxyUrl });
+          const proxyUrl = `/api/video-proxy?url=${encodeURIComponent(url)}`;
+          set({ originalVideoUrl: proxyUrl });
         } else {
-            set({ originalVideoUrl: url });
+          set({ originalVideoUrl: url });
         }
       },
 
       setScript: (script) => set({ generatedScript: script }),
-      appendScript: (text) => set((state) => ({ generatedScript: state.generatedScript + text })),
+      
+      appendScript: (text) => set((state) => ({ 
+        generatedScript: state.generatedScript + text 
+      })),
+      
       setCaptions: (captions) => set({ captions }),
 
-      // --- 2. NEW CAPTION UPDATE LOGIC ---
       updateCaption: (index, newText) => set((state) => {
         const newCaptions = [...state.captions];
         if (newCaptions[index]) {
-            newCaptions[index] = { ...newCaptions[index], text: newText };
+          newCaptions[index] = { ...newCaptions[index], text: newText };
         }
         return { captions: newCaptions };
       }),
 
       setAudio: (url) => set({ audioUrl: url }),
-      addClip: (clip) => set((state) => ({ clips: [...state.clips, clip] })),
       
-      setIsPlaying: (isPlaying) => set({ isPlaying }),
-      setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-      setDuration: (duration) => set({ duration, videoTrim: { start: 0, end: duration } }),
-      setZoomLevel: (zoomLevel) => set({ zoomLevel: Math.max(10, Math.min(200, zoomLevel)) }),
+      addClip: (clip) => set((state) => ({ 
+        clips: [...state.clips, clip] 
+      })),
+      
+      setIsPlaying: (isPlaying) => {
+        const state = get();
+        // Auto-stop at end
+        if (isPlaying && state.currentTime >= state.duration) {
+          set({ currentTime: 0, isPlaying: true });
+        } else {
+          set({ isPlaying });
+        }
+      },
+      
+      setCurrentTime: (time) => {
+        const state = get();
+        const clampedTime = Math.max(0, Math.min(state.duration, time));
+        
+        // Auto-stop at end
+        if (clampedTime >= state.duration && state.isPlaying) {
+          set({ currentTime: state.duration, isPlaying: false });
+        } else {
+          set({ currentTime: clampedTime });
+        }
+      },
+      
+      setDuration: (duration) => set({ 
+        duration,
+        videoTrim: { start: 0, end: duration }
+      }),
+      
+      setZoomLevel: (zoomLevel) => set({ 
+        zoomLevel: Math.max(10, Math.min(200, zoomLevel)) 
+      }),
       
       setVideoTrim: (start, end) => set((state) => ({ 
         videoTrim: { 
           start: Math.max(0, start), 
-          end: Math.min(state.duration, Math.max(start + 1, end))
+          end: Math.min(state.duration, Math.max(start + 0.5, end))
         } 
       })),
+      
+      resetProject: () => set(initialState),
     }),
     {
-      name: 'aura-project-storage', // unique name for the local storage key
-      storage: createJSONStorage(() => localStorage), // use browser local storage
-      // Don't save 'isPlaying' so audio doesn't blast on refresh
-      partialize: (state) => ({ 
-          originalVideoUrl: state.originalVideoUrl,
+      name: 'aura-project-storage',
+      storage: createJSONStorage(() => localStorage),
+      // Don't persist temporary state or blob URLs
+      partialize: (state) => {
+        const shouldPersist = (url: string | null) => {
+          if (!url) return false;
+          // Don't persist blob URLs - they're temporary
+          if (url.startsWith('blob:')) return false;
+          return true;
+        };
+
+        return {
+          // Only persist Drive URLs, not blob URLs
+          originalVideoUrl: shouldPersist(state.originalVideoUrl) ? state.originalVideoUrl : null,
           generatedScript: state.generatedScript,
           captions: state.captions,
-          audioUrl: state.audioUrl,
+          audioUrl: shouldPersist(state.audioUrl) ? state.audioUrl : null,
           duration: state.duration,
-          videoTrim: state.videoTrim
-      }),
+          videoTrim: state.videoTrim,
+          zoomLevel: state.zoomLevel,
+        };
+      },
+      // Handle hydration
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Reset playback state on load
+          state.isPlaying = false;
+          state.currentTime = 0;
+        }
+      },
     }
   )
 );
