@@ -1,3 +1,4 @@
+// src/app/project/[projectId]/page.tsx
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -6,7 +7,7 @@ import { FFmpegClient } from '@/core/ffmpeg/client';
 import { compressVideo, mergeAudioWithVideo } from '@/core/ffmpeg/actions';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { ToolPanel } from '@/components/layout/ToolPanel';
-import { Canvas } from '@/components/studio/Canvas'; // Implemented Canvas component
+import { Canvas } from '@/components/studio/Canvas'; 
 import { Timeline } from '@/components/studio/Timeline';
 import { TimelineControls } from '@/components/studio/TimelineControls';
 import { Download, Loader2 } from 'lucide-react';
@@ -28,7 +29,7 @@ export default function StudioPage() {
   const { 
     setOriginalVideo, originalVideoUrl, setScript, appendScript, generatedScript,
     audioUrl, setAudio, setCaptions,
-    setIsPlaying, setCurrentTime, setDuration
+    setIsPlaying, setCurrentTime, setDuration // Ensure setDuration is imported
   } = useTimelineStore();
 
   useEffect(() => {
@@ -44,41 +45,53 @@ export default function StudioPage() {
     });
   };
 
-// src/app/project/[projectId]/page.tsx
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+    // 1. Show local preview immediately (Fast, but temporary)
+    const localUrl = URL.createObjectURL(file);
+    setOriginalVideo(localUrl);
 
-  // 1. Show local preview immediately (Fast, but temporary)
-  const localUrl = URL.createObjectURL(file);
-  setOriginalVideo(localUrl);
-  
-  // 2. Upload to Drive in background
-  const formData = new FormData();
-  formData.append('file', file);
+    // --- FIX START: Extract Duration & Reset Timeline ---
+    // We create a temporary hidden video element to read metadata
+    const tempVideo = document.createElement('video');
+    tempVideo.preload = 'metadata';
+    tempVideo.onloadedmetadata = () => {
+      const duration = tempVideo.duration;
+      // This update resets videoTrim to {0, duration}, fixing the invisible timeline
+      if (duration && isFinite(duration)) {
+        setDuration(duration); 
+      }
+    };
+    tempVideo.src = localUrl;
+    // --- FIX END ---
+    
+    // 2. Upload to Drive in background
+    const formData = new FormData();
+    formData.append('file', file);
 
-  try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      
-      console.log("Saved to Drive:", data.url);
-      
-      // --- THE FIX ---
-      // Replace the temporary local link with the permanent Cloud link
-      setOriginalVideo(data.url); 
-      // ----------------
-      
-  } catch (error) {
-      console.error("Upload failed", error);
-  }
+    try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        
+        console.log("Saved to Drive:", data.url);
+        
+        // Replace the temporary local link with the permanent Cloud link
+        // Note: Ideally, keep using localUrl for thumbnails to avoid network lag
+        setOriginalVideo(data.url); 
+        
+    } catch (error) {
+        console.error("Upload failed", error);
+    }
 
-  setActiveTool('script'); 
-  await analyzeVideo(file);
-};
+    setActiveTool('script'); 
+    await analyzeVideo(file);
+  };
+
   const analyzeVideo = async (file: File) => {
     setIsAnalyzing(true);
     const { setScript, appendScript } = useTimelineStore.getState();
@@ -169,7 +182,7 @@ const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
       }
   };
 
-  // --- UPDATED: Caption generation with filtering ---
+  // --- Caption generation with filtering ---
   const handleAutoCaption = async () => {
     let mediaToTranscribe = audioUrl || originalVideoUrl;
     let mimeType = audioUrl ? 'audio/mpeg' : 'video/mp4';
@@ -257,8 +270,7 @@ const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
             </button>
         </div>
 
-        {/* --- REPLACED CANVAS AREA --- */}
-        {/* We use the Canvas component which handles the Player, Zoom, and Empty States */}
+        {/* ZONE C: CANVAS */}
         <Canvas isProcessing={isProcessing} progress={progress} />
 
         {/* ZONE D: TIMELINE AREA */}
