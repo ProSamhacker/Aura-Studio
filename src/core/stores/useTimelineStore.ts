@@ -26,10 +26,18 @@ export interface VoiceSettings {
   similarityBoost: number; // 0 to 1
 }
 
+export interface MediaAsset {
+  id: string;
+  url: string;
+  type: 'video' | 'image';
+  name: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   originalVideoUrl: string | null;
+  mediaLibrary: MediaAsset[]; // NEW: Store multiple files
   generatedScript: string;
   captions: Caption[];
   audioUrl: string | null;
@@ -51,8 +59,10 @@ interface TimelineState extends Project {
   hasUnsavedChanges: boolean;
   isAutoSaving: boolean;
 
-  // Actions - Video
+  // Actions - Video & Media
   setOriginalVideo: (url: string) => void;
+  addMediaToLibrary: (file: File, url: string) => void;
+  selectMediaFromLibrary: (url: string) => void;
   setDuration: (duration: number) => void;
   setVideoTrim: (start: number, end: number) => void;
   
@@ -105,6 +115,7 @@ const initialState = {
   id: '',
   name: 'Untitled Project',
   originalVideoUrl: null,
+  mediaLibrary: [],
   generatedScript: '',
   audioUrl: null,
   captions: [],
@@ -131,8 +142,26 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     
     set({ 
       originalVideoUrl: proxiedUrl,
-      hasUnsavedChanges: true 
+      hasUnsavedChanges: true,
+      currentTime: 0 // Reset time on video change for better UX
     });
+  },
+
+  addMediaToLibrary: (file, url) => set((state) => ({
+    mediaLibrary: [
+      ...state.mediaLibrary, 
+      { 
+        id: Math.random().toString(36).substr(2, 9), 
+        url, 
+        type: file.type.startsWith('video') ? 'video' : 'image', 
+        name: file.name 
+      }
+    ],
+    hasUnsavedChanges: true
+  })),
+
+  selectMediaFromLibrary: (url) => {
+     get().setOriginalVideo(url);
   },
 
   setDuration: (duration) => {
@@ -246,6 +275,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       id: state.id,
       name: state.name,
       originalVideoUrl: state.originalVideoUrl,
+      mediaLibrary: state.mediaLibrary, // Include media library in save
       generatedScript: state.generatedScript,
       captions: state.captions,
       audioUrl: state.audioUrl,
@@ -290,6 +320,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       
       set({
         ...project,
+        // Ensure backward compatibility if mediaLibrary doesn't exist in older saves
+        mediaLibrary: project.mediaLibrary || [],
         isPlaying: false,
         currentTime: 0,
         fps: 30,

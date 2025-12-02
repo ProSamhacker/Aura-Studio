@@ -11,7 +11,7 @@ export const Sidebar = ({ activeTool, setActiveTool }: SidebarProps) => {
     { id: 'script', icon: FileText, label: 'Script' },
     { id: 'voice', icon: Mic, label: 'Voice' },
     { id: 'captions', icon: Captions, label: 'Captions' },
-    { id: 'auraiq', icon: Bot, label: 'AuraIQ' },
+
   ];
 
   return (

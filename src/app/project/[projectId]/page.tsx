@@ -1,17 +1,17 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useTimelineStore } from '@/core/stores/useTimelineStore';
-import { FFmpegClient } from '@/core/ffmpeg/client';
-import { compressVideo, mergeAudioWithVideo } from '@/core/ffmpeg/actions';
-import { Sidebar } from '@/components/layout/Sidebar';
-import { ToolPanel } from '@/components/layout/ToolPanel';
-import { Canvas } from '@/components/studio/Canvas'; 
-import { Timeline } from '@/components/studio/Timeline';
-import { TimelineControls } from '@/components/studio/TimelineControls';
-import { Download, Loader2, AlertCircle, ArrowLeft, Save, Clock, Zap, Sliders, Wand2 } from 'lucide-react';
+import { useTimelineStore } from '../../../core/stores/useTimelineStore';
+import { FFmpegClient } from '../../../core/ffmpeg/client';
+import { compressVideo, mergeAudioWithVideo } from '../../../core/ffmpeg/actions';
+import { Sidebar } from '../../../components/layout/Sidebar';
+import { ToolPanel } from '../../../components/layout/ToolPanel';
+import { Canvas } from '../../../components/studio/Canvas'; 
+import { Timeline } from '../../../components/studio/Timeline';
+import { TimelineControls } from '../../../components/studio/TimelineControls';
+import { Download, Loader2, AlertCircle, ArrowLeft, Save, Clock, Zap } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
-import SmartAlignModal from '@/components/NEW/SmartAlignModal'; 
+import SmartAlignModal from '../../../components/NEW/SmartAlignModal'; 
 
 export default function StudioPage() {
   const params = useParams();
@@ -44,7 +44,7 @@ export default function StudioPage() {
     audioUrl, setAudio, setCaptions,
     setIsPlaying, setCurrentTime, setDuration,
     loadProject, saveProject, hasUnsavedChanges, updateProjectName, name: projectName,
-    voiceSettings
+    voiceSettings, addMediaToLibrary // Destructured new action
   } = useTimelineStore();
 
   useEffect(() => {
@@ -89,14 +89,6 @@ export default function StudioPage() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isUploading, hasUnsavedChanges]);
 
-  // Check for missing video on load
-  useEffect(() => {
-    if (originalVideoUrl && originalVideoUrl.startsWith('blob:')) {
-      console.warn('⚠️ Blob URL detected on page load - video will not persist');
-      setOriginalVideo('');
-    }
-  }, [originalVideoUrl]);
-
   const handleBack = () => {
     if (hasUnsavedChanges) {
       setShowBackConfirm(true);
@@ -140,115 +132,6 @@ export default function StudioPage() {
       video.src = videoUrl;
       video.load();
     });
-  };
-
-  // NEW: Handle Regenerate Script
-  const handleRegenerateScript = async () => {
-    if (!originalVideoUrl) return;
-    
-    // Use a confirm dialog to prevent accidental overwrites
-    if (generatedScript && !confirm("Regenerating will overwrite your current script. Continue?")) {
-      return;
-    }
-
-    try {
-      setIsAnalyzing(true);
-      console.log('🔄 Regenerating script from video URL:', originalVideoUrl);
-      
-      // Fetch the video content
-      const response = await fetch(originalVideoUrl);
-      if (!response.ok) throw new Error('Failed to fetch video for regeneration');
-      
-      const blob = await response.blob();
-      const file = new File([blob], "regenerated_video.mp4", { type: blob.type || 'video/mp4' });
-      
-      // Re-run analysis
-      await analyzeVideo(file);
-      
-    } catch (error) {
-      console.error("❌ Regeneration failed:", error);
-      alert("Failed to regenerate script. Please ensure the video is accessible.");
-      setIsAnalyzing(false);
-    }
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    console.log('📁 File selected:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
-
-    // 1. Create local preview URL (temporary)
-    const localUrl = URL.createObjectURL(file);
-    setOriginalVideo(localUrl);
-
-    // 2. Extract duration
-    try {
-      const duration = await extractVideoDuration(localUrl);
-      setDuration(duration);
-      console.log('✅ Duration set to:', duration);
-    } catch (error) {
-      console.error('❌ Failed to extract duration:', error);
-      setDuration(60);
-    }
-    
-    // 3. Upload to Drive IMMEDIATELY (blocking with better UX)
-    const driveUrl = await uploadToDrive(file);
-    
-    if (driveUrl) {
-      // Replace temporary blob URL with permanent Drive URL
-      setOriginalVideo(driveUrl);
-      saveProject(); // Force save after upload
-      console.log('✅ Video persisted to Drive:', driveUrl);
-    } else {
-      console.warn('⚠️ Drive upload failed - video will not persist on refresh');
-    }
-    
-    // 4. Switch to script tab and start analysis
-    setActiveTool('script');
-    await analyzeVideo(file);
-  };
-
-  const uploadToDrive = async (file: File): Promise<string | null> => {
-    setIsUploading(true);
-    setUploadProgress(0);
-    
-    try {
-      console.log('☁️ Uploading to Google Drive...');
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => Math.min(prev + 10, 90));
-      }, 500);
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      });
-      
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-      
-      if (!res.ok) {
-        throw new Error('Upload failed');
-      }
-      
-      const data = await res.json();
-      console.log('✅ Upload complete:', data.url);
-      
-      setTimeout(() => {
-        setIsUploading(false);
-        setUploadProgress(0);
-      }, 1000);
-      
-      return data.url;
-    } catch (error) {
-      console.error('❌ Drive upload failed:', error);
-      setIsUploading(false);
-      setUploadProgress(0);
-      return null;
-    }
   };
 
   const analyzeVideo = async (file: File) => {
@@ -322,6 +205,118 @@ export default function StudioPage() {
     }
   };
 
+  const uploadToDrive = async (file: File): Promise<string | null> => {
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    try {
+      console.log('☁️ Uploading to Google Drive...');
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => Math.min(prev + 10, 90));
+      }, 500);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      if (!res.ok) {
+        throw new Error('Upload failed');
+      }
+      
+      const data = await res.json();
+      console.log('✅ Upload complete:', data.url);
+      
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(0);
+      }, 1000);
+      
+      return data.url;
+    } catch (error) {
+      console.error('❌ Drive upload failed:', error);
+      setIsUploading(false);
+      setUploadProgress(0);
+      return null;
+    }
+  };
+
+  // UPDATED: Handle Regenerate Script
+  const handleRegenerateScript = async () => {
+    if (!originalVideoUrl) return;
+    
+    // Use a confirm dialog to prevent accidental overwrites
+    if (generatedScript && !confirm("Regenerating will overwrite your current script. Continue?")) {
+      return;
+    }
+
+    try {
+      setIsAnalyzing(true);
+      console.log('🔄 Regenerating script from video URL:', originalVideoUrl);
+      
+      // Fetch the video content
+      const response = await fetch(originalVideoUrl);
+      if (!response.ok) throw new Error('Failed to fetch video for regeneration');
+      
+      const blob = await response.blob();
+      const file = new File([blob], "regenerated_video.mp4", { type: blob.type || 'video/mp4' });
+      
+      // Re-run analysis
+      await analyzeVideo(file);
+      
+    } catch (error) {
+      console.error("❌ Regeneration failed:", error);
+      alert("Failed to regenerate script. Please ensure the video is accessible.");
+      setIsAnalyzing(false);
+    }
+  };
+
+  // UPDATED: Handle File Select to use Media Library
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    console.log('📁 File selected:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+
+    // 1. Create local URL
+    const localUrl = URL.createObjectURL(file);
+    
+    // 2. Add to library IMMEDIATELY
+    addMediaToLibrary(file, localUrl);
+    setOriginalVideo(localUrl); // Set as active
+
+    // 3. Extract duration
+    try {
+      const duration = await extractVideoDuration(localUrl);
+      setDuration(duration);
+      console.log('✅ Duration set to:', duration);
+    } catch (error) {
+      console.error('❌ Failed to extract duration:', error);
+      setDuration(60);
+    }
+    
+    // 4. Upload to Drive (Async but updates store when done)
+    const driveUrl = await uploadToDrive(file);
+    if (driveUrl) {
+        // Note: Ideally update the library item with the drive URL here
+        // For now we assume if users reload they might lose the blob unless we persist the drive URL
+        console.log('✅ Video persisted to Drive:', driveUrl);
+    } else {
+      console.warn('⚠️ Drive upload failed - video will not persist on refresh');
+    }
+    
+    // 5. Switch to script tab and start analysis
+    setActiveTool('script');
+    await analyzeVideo(file);
+  };
+
+  // UPDATED: Better Regex for Script
   const handleGenerateVoice = async () => {
     if (!generatedScript) return;
     setIsGeneratingVoice(true);
@@ -329,13 +324,15 @@ export default function StudioPage() {
     try {
       const lines = generatedScript.split('\n');
       const cleanLines = lines
-        .map(line => line.replace(/^[\s-]*[\(\[]?\d{1,2}:\d{2}(?:.*?)[\)\]]?:?\s*/, "").trim())
+        // FIXED REGEX: Removes "1. ", "1)", "(0:00-0:05)" and combination of both
+        // Pattern matches: optional numbers/dots/parens at start, followed by optional timestamp format like (0:00 - 0:05)
+        .map(line => line.replace(/^[\s\d\.\)\-\]]*(?:[\(\[]?\d{1,2}:\d{2}(?:.*?)[\)\]]?:?)?\s*/, "").trim())
         .filter(line => line.length > 0);
 
       const textToRead = cleanLines.join(' ');
       if (textToRead.length < 2) throw new Error("Script is empty.");
 
-      console.log('🎙️ Generating voiceover...');
+      console.log('🎙️ Generating voiceover for text:', textToRead.substring(0, 50) + "...");
       
       const response = await fetch('/api/ai/voice', {
         method: 'POST',

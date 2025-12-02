@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Mic, Volume2, Gauge, Activity, Play, CheckCircle, Loader2,
-  User, UserCircle
+  User, UserCircle, X, ChevronRight
 } from 'lucide-react';
 
 interface VoiceSettings {
@@ -39,6 +39,21 @@ const EnhancedVoicePanel = ({
   script: string;
 }) => {
   const [showVoiceLibrary, setShowVoiceLibrary] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Handle click outside to close modal
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(event.target as Node)) {
+        setShowVoiceLibrary(false);
+      }
+    };
+
+    if (showVoiceLibrary) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showVoiceLibrary]);
 
   const voices: Voice[] = [
     { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam', description: 'Deep, authoritative voice', gender: 'male', age: 'middle', style: 'narrative' },
@@ -54,270 +69,211 @@ const EnhancedVoicePanel = ({
   const selectedVoice = voices.find(v => v.id === settings.voiceId) || voices[0];
 
   return (
-    <div className="p-6 space-y-6">
-      
+    <div className="flex flex-col h-full bg-[#141414]">
       {/* Header */}
-      <div>
-        <h2 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
-          <Mic className="w-5 h-5 text-purple-400" />
+      <div className="p-6 border-b border-[#1f1f1f] bg-[#141414]">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <Mic className="w-5 h-5 text-purple-500" />
           Voice Studio
         </h2>
-        <p className="text-xs text-gray-500">Powered by ElevenLabs AI</p>
+        <p className="text-xs text-gray-500 mt-1">AI Neural Text-to-Speech</p>
       </div>
 
-      {/* Voice Selection */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-          Voice Character
-        </label>
+      <div className="p-6 space-y-8 flex-1 overflow-y-auto no-scrollbar">
         
-        <button
-          onClick={() => setShowVoiceLibrary(true)}
-          className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl p-4 hover:border-purple-500 transition group"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-500/10 rounded-full flex items-center justify-center group-hover:bg-purple-500/20 transition">
-              {selectedVoice.gender === 'male' ? (
-                <User className="w-5 h-5 text-purple-400" />
-              ) : (
-                <UserCircle className="w-5 h-5 text-purple-400" />
-              )}
+        {/* Selected Voice Card */}
+        <div className="space-y-2">
+          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Current Voice</label>
+          <button
+            onClick={() => setShowVoiceLibrary(true)}
+            className="w-full bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-4 hover:border-purple-500/50 hover:bg-[#202020] transition group flex items-center gap-4 text-left shadow-lg relative overflow-hidden"
+          >
+            <div className="w-12 h-12 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-full flex items-center justify-center border border-purple-500/30 group-hover:scale-105 transition z-10">
+               {selectedVoice.gender === 'male' ? <User className="w-6 h-6 text-purple-400" /> : <UserCircle className="w-6 h-6 text-purple-400" />}
             </div>
-            <div className="flex-1 text-left">
-              <div className="text-sm font-medium text-white">{selectedVoice.name}</div>
-              <div className="text-xs text-gray-500">{selectedVoice.description}</div>
+            <div className="flex-1 z-10">
+              <div className="text-base font-bold text-white flex items-center gap-2">
+                {selectedVoice.name}
+                <span className="text-[9px] px-1.5 py-0.5 bg-white/5 border border-white/10 text-gray-400 rounded-full uppercase tracking-wide font-normal">
+                  {selectedVoice.style}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">{selectedVoice.description}</div>
             </div>
-            <div className="flex gap-1">
-              <span className="text-[10px] px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full">
-                {selectedVoice.gender}
-              </span>
-              <span className="text-[10px] px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded-full capitalize">
-                {selectedVoice.style}
-              </span>
-            </div>
-          </div>
-        </button>
-      </div>
-
-      {/* Voice Library Modal */}
-      {showVoiceLibrary && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-white mb-4">Voice Library</h3>
+            <ChevronRight className="w-5 h-5 text-gray-600 group-hover:text-purple-400 transition z-10" />
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
-              {voices.map((voice) => (
-                <button
-                  key={voice.id}
-                  onClick={() => {
-                    onSettingsChange({ voiceId: voice.id });
-                    setShowVoiceLibrary(false);
-                  }}
-                  className={`p-4 rounded-xl border-2 transition text-left ${
-                    settings.voiceId === voice.id
-                      ? 'border-purple-500 bg-purple-500/10'
-                      : 'border-gray-700 bg-[#252525] hover:border-gray-600'
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      settings.voiceId === voice.id ? 'bg-purple-500/20' : 'bg-gray-700/50'
-                    }`}>
-                      {voice.gender === 'male' ? (
-                        <User className="w-5 h-5 text-gray-400" />
-                      ) : (
-                        <UserCircle className="w-5 h-5 text-gray-400" />
+            {/* Hover Glow Effect */}
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/0 via-purple-500/0 to-purple-500/5 opacity-0 group-hover:opacity-100 transition duration-500" />
+          </button>
+        </div>
+
+        {/* Voice Library Modal */}
+        {showVoiceLibrary && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-in fade-in duration-200">
+            <div ref={modalRef} className="bg-[#141414] border border-[#2a2a2a] rounded-3xl w-full max-w-3xl h-[85vh] flex flex-col shadow-2xl shadow-purple-900/20 scale-100 animate-in zoom-in-95 duration-200">
+              <div className="p-6 border-b border-[#2a2a2a] flex justify-between items-center bg-[#141414] rounded-t-3xl">
+                <div>
+                  <h3 className="text-xl font-bold text-white">Voice Library</h3>
+                  <p className="text-xs text-gray-500 mt-1">Select a character for your video</p>
+                </div>
+                <button onClick={() => setShowVoiceLibrary(false)} className="p-2 hover:bg-[#252525] rounded-full transition text-gray-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-3 no-scrollbar bg-[#0E0E0E]">
+                {voices.map((voice) => (
+                  <button
+                    key={voice.id}
+                    onClick={() => {
+                      onSettingsChange({ voiceId: voice.id });
+                      setShowVoiceLibrary(false);
+                    }}
+                    className={`p-4 rounded-xl border-2 transition text-left group relative ${
+                      settings.voiceId === voice.id
+                        ? 'border-purple-500 bg-purple-500/10'
+                        : 'border-[#2a2a2a] bg-[#1a1a1a] hover:border-gray-600 hover:bg-[#202020]'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition ${
+                        settings.voiceId === voice.id ? 'bg-purple-500/20' : 'bg-[#252525] group-hover:bg-[#303030]'
+                      }`}>
+                        {voice.gender === 'male' ? (
+                          <User className={`w-5 h-5 ${settings.voiceId === voice.id ? 'text-purple-400' : 'text-gray-500'}`} />
+                        ) : (
+                          <UserCircle className={`w-5 h-5 ${settings.voiceId === voice.id ? 'text-purple-400' : 'text-gray-500'}`} />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-bold text-white text-sm mb-0.5">{voice.name}</div>
+                        <div className="text-xs text-gray-500 mb-2 truncate">{voice.description}</div>
+                        <div className="flex flex-wrap gap-1">
+                          <span className="text-[9px] px-1.5 py-0.5 bg-white/5 border border-white/10 text-gray-400 rounded uppercase tracking-wide">
+                            {voice.gender}
+                          </span>
+                          <span className="text-[9px] px-1.5 py-0.5 bg-white/5 border border-white/10 text-gray-400 rounded uppercase tracking-wide">
+                            {voice.style}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      {/* Selection Indicator */}
+                      {settings.voiceId === voice.id && (
+                        <div className="absolute top-4 right-4">
+                          <div className="w-2 h-2 bg-purple-500 rounded-full shadow-[0_0_8px_rgba(168,85,247,0.8)]"></div>
+                        </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <div className="font-medium text-white text-sm mb-1">{voice.name}</div>
-                      <div className="text-xs text-gray-500 mb-2">{voice.description}</div>
-                      <div className="flex gap-1">
-                        <span className="text-[10px] px-1.5 py-0.5 bg-gray-700/50 text-gray-400 rounded">
-                          {voice.age}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 bg-gray-700/50 text-gray-400 rounded capitalize">
-                          {voice.style}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-            
-            <button
-              onClick={() => setShowVoiceLibrary(false)}
-              className="w-full px-4 py-2.5 bg-[#252525] hover:bg-[#303030] text-white rounded-lg text-sm font-medium transition"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Speed Control */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Gauge className="w-3 h-3" />
-            Speed
-          </span>
-          <span className="font-mono text-white text-sm">{settings.speed.toFixed(2)}x</span>
-        </label>
-        
-        <div className="space-y-2">
-          <input
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.05"
-            value={settings.speed}
-            onChange={(e) => onSettingsChange({ speed: parseFloat(e.target.value) })}
-            className="w-full accent-purple-500"
-          />
-          <div className="flex justify-between text-[10px] text-gray-600 px-1">
-            <span>Slower</span>
-            <span>Normal</span>
-            <span>Faster</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Pitch Control */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Volume2 className="w-3 h-3" />
-            Pitch
-          </span>
-          <span className="font-mono text-white text-sm">{settings.pitch.toFixed(2)}x</span>
-        </label>
-        
-        <div className="space-y-2">
-          <input
-            type="range"
-            min="0.5"
-            max="2"
-            step="0.05"
-            value={settings.pitch}
-            onChange={(e) => onSettingsChange({ pitch: parseFloat(e.target.value) })}
-            className="w-full accent-purple-500"
-          />
-          <div className="flex justify-between text-[10px] text-gray-600 px-1">
-            <span>Lower</span>
-            <span>Normal</span>
-            <span>Higher</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Stability */}
-      <div className="space-y-3">
-        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider flex items-center justify-between">
-          <span className="flex items-center gap-2">
-            <Activity className="w-3 h-3" />
-            Stability
-          </span>
-          <span className="font-mono text-white text-sm">{Math.round(settings.stability * 100)}%</span>
-        </label>
-        
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={settings.stability}
-          onChange={(e) => onSettingsChange({ stability: parseFloat(e.target.value) })}
-          className="w-full accent-purple-500"
-        />
-        <p className="text-[10px] text-gray-600">
-          Higher stability = More consistent voice
-        </p>
-      </div>
-
-      {/* Generate Button */}
-      <button
-        onClick={onGenerate}
-        disabled={isGenerating || !script}
-        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3.5 rounded-xl font-bold flex items-center justify-center gap-3 transition shadow-lg shadow-purple-900/20"
-      >
-        {isGenerating ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Generating Voice...
-          </>
-        ) : (
-          <>
-            <Mic className="w-5 h-5" />
-            Generate Voiceover
-          </>
-        )}
-      </button>
-
-      {/* Script Length Info */}
-      {script && (
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-lg p-3 text-xs text-gray-400">
-          <div className="flex justify-between mb-1">
-            <span>Script length:</span>
-            <span className="text-white font-medium">{script.length} characters</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Est. duration:</span>
-            <span className="text-white font-medium">
-              ~{Math.round(script.length / 15)} seconds
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* Preview Audio */}
-      {previewUrl && (
-        <div className="space-y-3 p-4 bg-gradient-to-r from-purple-900/20 to-blue-900/20 rounded-xl border border-purple-500/30 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-purple-500/20 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-4 h-4 text-purple-400" />
+                  </button>
+                ))}
               </div>
-              <span className="text-sm text-purple-200 font-medium">Preview Ready</span>
             </div>
-            <button
-              onClick={onApply}
-              className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-bold transition"
-            >
-              Apply to Timeline
-            </button>
           </div>
-          
-          <audio
-            controls
-            src={previewUrl}
-            className="w-full h-10 rounded-lg"
-            style={{ filter: 'invert(1) hue-rotate(180deg)' }}
-          />
-          
-          <div className="flex gap-2 text-[10px] text-gray-500">
-            <button
-              onClick={onGenerate}
-              className="flex-1 px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] rounded text-gray-400 hover:text-white transition"
-            >
-              Regenerate
-            </button>
-            <button
-              onClick={() => {
-                const a = document.createElement('a');
-                a.href = previewUrl;
-                a.download = 'voiceover.mp3';
-                a.click();
-              }}
-              className="flex-1 px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] rounded text-gray-400 hover:text-white transition"
-            >
-              Download
-            </button>
-          </div>
-        </div>
-      )}
+        )}
 
+        {/* Settings Grid */}
+        <div className="grid grid-cols-2 gap-4">
+            {/* Speed Control */}
+            <div className="space-y-3 bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a] hover:border-gray-700 transition">
+                <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
+                  <span className="flex items-center gap-1.5"><Gauge className="w-3 h-3" /> Speed</span>
+                  <span className="text-purple-400 font-mono bg-purple-500/10 px-1.5 rounded">{settings.speed.toFixed(2)}x</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={settings.speed}
+                  onChange={(e) => onSettingsChange({ speed: parseFloat(e.target.value) })}
+                  className="w-full accent-purple-500 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+            </div>
+
+            {/* Pitch Control */}
+            <div className="space-y-3 bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a] hover:border-gray-700 transition">
+                <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
+                  <span className="flex items-center gap-1.5"><Volume2 className="w-3 h-3" /> Pitch</span>
+                  <span className="text-purple-400 font-mono bg-purple-500/10 px-1.5 rounded">{settings.pitch.toFixed(2)}x</span>
+                </label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2"
+                  step="0.05"
+                  value={settings.pitch}
+                  onChange={(e) => onSettingsChange({ pitch: parseFloat(e.target.value) })}
+                  className="w-full accent-purple-500 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                />
+            </div>
+        </div>
+
+        {/* Stability Slider (Full Width) */}
+        <div className="space-y-3 bg-[#1a1a1a] p-4 rounded-xl border border-[#2a2a2a] hover:border-gray-700 transition">
+            <label className="text-[10px] font-bold text-gray-500 uppercase flex justify-between items-center">
+              <span className="flex items-center gap-1.5"><Activity className="w-3 h-3" /> Stability</span>
+              <span className="text-purple-400 font-mono bg-purple-500/10 px-1.5 rounded">{Math.round(settings.stability * 100)}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={settings.stability}
+              onChange={(e) => onSettingsChange({ stability: parseFloat(e.target.value) })}
+              className="w-full accent-purple-500 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+            />
+            <div className="flex justify-between text-[9px] text-gray-600 font-medium">
+              <span>More Variable</span>
+              <span>More Consistent</span>
+            </div>
+        </div>
+
+        {/* Generate Action */}
+        <div className="pt-2">
+            <button
+                onClick={onGenerate}
+                disabled={isGenerating || !script}
+                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold flex items-center justify-center gap-3 transition shadow-lg shadow-purple-900/20 group relative overflow-hidden"
+            >
+                <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+                {isGenerating ? (
+                <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Generating...
+                </>
+                ) : (
+                <>
+                    <Mic className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                    Generate Voiceover
+                </>
+                )}
+            </button>
+            {!script && (
+              <p className="text-center text-[10px] text-red-400 mt-2">Generate or write a script first.</p>
+            )}
+        </div>
+
+        {/* Preview Player */}
+        {previewUrl && (
+            <div className="p-4 bg-gradient-to-r from-[#1a1a1a] to-[#202020] rounded-xl border border-purple-500/30 animate-in slide-in-from-bottom-2 shadow-lg">
+                <div className="flex items-center justify-between mb-3">
+                    <span className="text-xs font-bold text-purple-400 flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4" /> Ready to Apply
+                    </span>
+                    <button
+                        onClick={onApply}
+                        className="px-4 py-1.5 bg-white text-black hover:bg-gray-200 text-xs font-bold rounded-lg transition flex items-center gap-2"
+                    >
+                        <Play className="w-3 h-3 fill-black" />
+                        Apply to Timeline
+                    </button>
+                </div>
+                <audio controls src={previewUrl} className="w-full h-8 rounded opacity-80 hover:opacity-100 transition" />
+            </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -83,6 +83,7 @@ export const RemotionPlayer = () => {
   return (
     <div className="w-full aspect-video rounded-xl overflow-hidden shadow-2xl border border-slate-800 bg-black">
       <Player
+        key={audioUrl || 'no-audio'} // CRITICAL FIX: Force re-render when audio changes
         ref={playerRef}
         component={VideoComposition}
         inputProps={inputProps}
