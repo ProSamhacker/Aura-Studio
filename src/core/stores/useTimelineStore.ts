@@ -37,7 +37,7 @@ export interface Project {
   id: string;
   name: string;
   originalVideoUrl: string | null;
-  mediaLibrary: MediaAsset[]; // NEW: Store multiple files
+  mediaLibrary: MediaAsset[];
   generatedScript: string;
   captions: Caption[];
   audioUrl: string | null;
@@ -59,33 +59,23 @@ interface TimelineState extends Project {
   hasUnsavedChanges: boolean;
   isAutoSaving: boolean;
 
-  // Actions - Video & Media
+  // Actions
   setOriginalVideo: (url: string) => void;
   addMediaToLibrary: (file: File, url: string) => void;
   selectMediaFromLibrary: (url: string) => void;
   setDuration: (duration: number) => void;
   setVideoTrim: (start: number, end: number) => void;
-  
-  // Actions - Script
   setScript: (script: string) => void;
   appendScript: (text: string) => void;
-  
-  // Actions - Captions
   setCaptions: (captions: Caption[]) => void;
   updateCaption: (index: number, updates: Partial<Caption>) => void;
   updateCaptionStyle: (index: number, style: Partial<CaptionStyle>) => void;
   setDefaultCaptionStyle: (style: Partial<CaptionStyle>) => void;
-  
-  // Actions - Audio
   setAudio: (url: string) => void;
   setVoiceSettings: (settings: Partial<VoiceSettings>) => void;
-  
-  // Actions - Playback
   setIsPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
   setZoomLevel: (zoom: number) => void;
-  
-  // Actions - Project Management
   saveProject: () => void;
   loadProject: (projectId: string) => void;
   updateProjectName: (name: string) => void;
@@ -94,7 +84,7 @@ interface TimelineState extends Project {
 
 const defaultCaptionStyle: CaptionStyle = {
   color: '#FFFFFF',
-  fontSize: 32,
+  fontSize: 42, // Increased default size for better visibility
   fontFamily: 'Inter, sans-serif',
   fontWeight: 'bold',
   textAlign: 'center',
@@ -143,22 +133,28 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     set({ 
       originalVideoUrl: proxiedUrl,
       hasUnsavedChanges: true,
-      currentTime: 0 // Reset time on video change for better UX
+      currentTime: 0 
     });
   },
 
-  addMediaToLibrary: (file, url) => set((state) => ({
-    mediaLibrary: [
-      ...state.mediaLibrary, 
-      { 
-        id: Math.random().toString(36).substr(2, 9), 
-        url, 
-        type: file.type.startsWith('video') ? 'video' : 'image', 
-        name: file.name 
-      }
-    ],
-    hasUnsavedChanges: true
-  })),
+  addMediaToLibrary: (file, url) => set((state) => {
+    // Check duplicates
+    const exists = state.mediaLibrary.some(m => m.name === file.name);
+    if (exists) return {};
+
+    return {
+      mediaLibrary: [
+        ...state.mediaLibrary, 
+        { 
+          id: Math.random().toString(36).substr(2, 9), 
+          url, 
+          type: file.type.startsWith('video') ? 'video' : 'image', 
+          name: file.name 
+        }
+      ],
+      hasUnsavedChanges: true
+    };
+  }),
 
   selectMediaFromLibrary: (url) => {
      get().setOriginalVideo(url);
@@ -169,7 +165,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     set({ 
       duration: validDuration,
       videoTrim: { start: 0, end: validDuration },
-      currentTime: Math.min(get().currentTime, validDuration),
       hasUnsavedChanges: true
     });
   },
@@ -196,14 +191,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   })),
   
   setCaptions: (captions) => {
-    const state = get();
-    const captionsWithStyle = captions.map(cap => ({
-      ...cap,
-      style: cap.style || { ...state.defaultCaptionStyle }
-    }));
-    
     set({ 
-      captions: captionsWithStyle,
+      captions, // Don't bake style into captions, use defaultStyle as source of truth unless overridden
       hasUnsavedChanges: true
     });
   },
@@ -221,7 +210,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     if (newCaptions[index]) {
       newCaptions[index] = {
         ...newCaptions[index],
-        style: { ...newCaptions[index].style, ...styleUpdates } as CaptionStyle
+        style: { ...(newCaptions[index].style || state.defaultCaptionStyle), ...styleUpdates } as CaptionStyle
       };
     }
     return { captions: newCaptions, hasUnsavedChanges: true };
@@ -269,13 +258,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   saveProject: () => {
     const state = get();
-    
-    // Save to project-specific storage
     const projectData: Project = {
       id: state.id,
       name: state.name,
       originalVideoUrl: state.originalVideoUrl,
-      mediaLibrary: state.mediaLibrary, // Include media library in save
+      mediaLibrary: state.mediaLibrary,
       generatedScript: state.generatedScript,
       captions: state.captions,
       audioUrl: state.audioUrl,
@@ -288,14 +275,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     
     localStorage.setItem(`aura-project-${state.id}`, JSON.stringify(projectData));
     
-    // Update projects list
     const projectsList = JSON.parse(localStorage.getItem('aura-projects') || '[]');
     const existingIndex = projectsList.findIndex((p: any) => p.id === state.id);
     
     const projectMeta = {
       id: state.id,
       name: state.name,
-      thumbnail: '', // TODO: Generate thumbnail
+      thumbnail: '',
       lastEdited: new Date(),
       duration: state.duration,
     };
@@ -307,9 +293,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }
     
     localStorage.setItem('aura-projects', JSON.stringify(projectsList));
-    
     set({ hasUnsavedChanges: false, lastSaved: new Date() });
-    console.log('✅ Project saved:', state.name);
   },
 
   loadProject: (projectId) => {
@@ -317,10 +301,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     
     if (projectData) {
       const project: Project = JSON.parse(projectData);
-      
       set({
         ...project,
-        // Ensure backward compatibility if mediaLibrary doesn't exist in older saves
         mediaLibrary: project.mediaLibrary || [],
         isPlaying: false,
         currentTime: 0,
@@ -329,10 +311,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         hasUnsavedChanges: false,
         isAutoSaving: false,
       });
-      
-      console.log('✅ Project loaded:', project.name);
     } else {
-      // New project
       set({
         ...initialState,
         id: projectId,
@@ -341,10 +320,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }
   },
 
-  updateProjectName: (name) => set({ 
-    name,
-    hasUnsavedChanges: true 
-  }),
-
+  updateProjectName: (name) => set({ name, hasUnsavedChanges: true }),
   resetProject: () => set(initialState),
 }));

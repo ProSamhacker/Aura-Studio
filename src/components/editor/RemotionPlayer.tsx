@@ -17,15 +17,19 @@ export const RemotionPlayer = () => {
     setIsPlaying, 
     setCurrentTime,
     duration,
-    fps
+    fps,
+    defaultCaptionStyle // Subscribe to style changes
   } = useTimelineStore();
 
-  // Memoize inputProps to prevent player reset on every frame update
+  // Memoize inputProps to prevent player reset on every frame update BUT include style dependencies
   const inputProps = useMemo(() => ({
     videoUrl: originalVideoUrl,
     audioUrl: audioUrl,
-    captions: captions || [],
-  }), [originalVideoUrl, audioUrl, captions]);
+    captions: captions.map(c => ({
+        ...c,
+        style: c.style || defaultCaptionStyle // Ensure latest default style is applied
+    }))
+  }), [originalVideoUrl, audioUrl, captions, defaultCaptionStyle]);
 
   // 1. Sync Store -> Player (Play/Pause)
   useEffect(() => {
@@ -44,13 +48,12 @@ export const RemotionPlayer = () => {
     const playerTime = playerRef.current.getCurrentFrame() / fps;
     const timeDiff = Math.abs(playerTime - currentTime);
 
-    // Only seek if the difference is significant (> 0.2s) to prevent stutter
-    if (timeDiff > 0.2) {
+    if (timeDiff > 0.25) { // Increased threshold slightly
       playerRef.current.seekTo(currentTime * fps);
     }
   }, [currentTime, fps]);
 
-  // 3. Sync Player -> Store (Polling Loop) + End Detection
+  // 3. Sync Player -> Store (Polling Loop)
   useEffect(() => {
     let animationFrameId: number;
 
@@ -59,10 +62,8 @@ export const RemotionPlayer = () => {
         const frame = playerRef.current.getCurrentFrame();
         const durationInFrames = Math.max(1, Math.floor(duration * fps));
 
-        // Update Store with current time
         setCurrentTime(frame / fps);
 
-        // Check if video ended (Stop logic)
         if (frame >= durationInFrames - 1) {
             setIsPlaying(false);
         } else {
@@ -83,7 +84,7 @@ export const RemotionPlayer = () => {
   return (
     <div className="w-full aspect-video rounded-xl overflow-hidden shadow-2xl border border-slate-800 bg-black">
       <Player
-        key={audioUrl || 'no-audio'} // CRITICAL FIX: Force re-render when audio changes
+        key={audioUrl || 'no-audio'} // CRITICAL: Force re-mount when audio changes to ensure it loads
         ref={playerRef}
         component={VideoComposition}
         inputProps={inputProps}
@@ -92,7 +93,7 @@ export const RemotionPlayer = () => {
         compositionWidth={1920}
         compositionHeight={1080}
         style={{ width: '100%', height: '100%' }}
-        controls={false} // We use our custom timeline controls
+        controls={false}
       />
     </div>
   );

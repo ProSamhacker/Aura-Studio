@@ -1,4 +1,4 @@
-// src/components/editor/VideoComposition.tsx - ENHANCED WITH STYLING
+// src/components/editor/VideoComposition.tsx
 import React from 'react';
 import { AbsoluteFill, Video, Audio, useCurrentFrame, useVideoConfig } from 'remotion';
 
@@ -40,10 +40,10 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
     ? captions.find((c) => currentTime >= c.start && currentTime <= c.end)
     : null;
 
-  // Default style if none specified
+  // Default style if none specified (Fallback)
   const defaultStyle: CaptionStyle = {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 42,
     fontFamily: 'Inter, sans-serif',
     fontWeight: 'bold',
     textAlign: 'center',
@@ -55,12 +55,12 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
   if (!videoUrl) {
     return (
       <AbsoluteFill className="bg-black flex items-center justify-center">
-        <h1 className="text-white text-2xl font-bold">No Video Loaded</h1>
+        <h1 className="text-white text-2xl font-bold tracking-widest uppercase">Aura Studio</h1>
       </AbsoluteFill>
     );
   }
 
-  // Get caption style
+  // Get caption style - use caption's own style or fallback
   const captionStyle = activeCaption?.style || defaultStyle;
   
   // Position mapping
@@ -87,7 +87,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
         volume={audioUrl ? 0 : 1}
       />
 
-      {/* LAYER 2: AI Voiceover */}
+      {/* LAYER 2: AI Voiceover - Critical fix: Key handled in parent */}
       {audioUrl && <Audio src={audioUrl} />}
 
       {/* LAYER 3: Styled Captions */}
@@ -97,7 +97,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
           style={{ opacity: captionStyle.opacity }}
         >
           <div 
-            className="px-8 py-4 rounded-2xl shadow-2xl max-w-4xl"
+            className="px-6 py-3 rounded-xl shadow-lg max-w-[85%] backdrop-blur-sm"
             style={{
               backgroundColor: captionStyle.backgroundColor,
             }}
@@ -111,7 +111,7 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
                 textAlign: captionStyle.textAlign,
                 margin: 0,
                 lineHeight: 1.3,
-                textShadow: '2px 2px 4px rgba(0,0,0,0.5)',
+                textShadow: '0px 2px 4px rgba(0,0,0,0.8)',
               }}
             >
               {activeCaption.text}

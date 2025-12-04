@@ -11,7 +11,7 @@ export async function POST(req: Request) {
 
     // 2. Call Gemini with BOTH text and video
     const result = streamText({
-      model: google('gemini-2.5-pro'), // Best model for video analysis
+      model: google('gemini-2.5-flash'), // Best model for video analysis
       messages: [
         {
           role: 'user',

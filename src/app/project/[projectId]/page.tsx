@@ -316,29 +316,38 @@ export default function StudioPage() {
     await analyzeVideo(file);
   };
 
-  // UPDATED: Better Regex for Script
-  const handleGenerateVoice = async () => {
+ const handleGenerateVoice = async () => {
     if (!generatedScript) return;
     setIsGeneratingVoice(true);
     
     try {
       const lines = generatedScript.split('\n');
       const cleanLines = lines
-        // FIXED REGEX: Removes "1. ", "1)", "(0:00-0:05)" and combination of both
-        // Pattern matches: optional numbers/dots/parens at start, followed by optional timestamp format like (0:00 - 0:05)
-        .map(line => line.replace(/^[\s\d\.\)\-\]]*(?:[\(\[]?\d{1,2}:\d{2}(?:.*?)[\)\]]?:?)?\s*/, "").trim())
-        .filter(line => line.length > 0);
+        // ROBUST CLEANING REGEX:
+        // Removes timestamps (0:00), scene numbers (1., Scene 1:), directions [Happy], and extra symbols
+        .map(line => {
+            let text = line;
+            // Remove timestamps like (0:00 - 0:05) or [00:12]
+            text = text.replace(/[\(\[]\d{1,2}:\d{2}(?:.*?)[\)\]]/g, "");
+            // Remove leading numbers, bullet points, "Scene X:", "Narrator:"
+            text = text.replace(/^[\s\d\.\)\-\]]*(?:Scene\s*\d+:?)?(?:Narrator:?)?\s*/i, "");
+            // Remove trailing timestamps or symbols
+            text = text.replace(/[\(\[]\d{1,2}:\d{2}.*$/, "");
+            return text.trim();
+        })
+        .filter(line => line.length > 0 && !line.match(/^\d+$/)); // Filter out empty lines or isolated numbers
 
       const textToRead = cleanLines.join(' ');
-      if (textToRead.length < 2) throw new Error("Script is empty.");
+      if (textToRead.length < 2) throw new Error("Script is empty after cleaning.");
 
-      console.log('🎙️ Generating voiceover for text:', textToRead.substring(0, 50) + "...");
+      console.log('🎙️ Sending text to AI:', textToRead);
       
       const response = await fetch('/api/ai/voice', {
         method: 'POST',
         body: JSON.stringify({ 
           text: textToRead, 
           voiceId: voiceSettings.voiceId,
+          // Pass settings
           speed: voiceSettings.speed,
           pitch: voiceSettings.pitch,
           stability: voiceSettings.stability,
@@ -350,10 +359,9 @@ export default function StudioPage() {
       
       const blob = await response.blob();
       setPreviewVoiceUrl(URL.createObjectURL(blob));
-      console.log('✅ Voiceover generated');
     } catch (e) { 
       alert("Voice generation failed. Please check your API keys."); 
-      console.error('❌ Voice generation error:', e); 
+      console.error(e); 
     } finally { 
       setIsGeneratingVoice(false); 
     }
@@ -362,10 +370,9 @@ export default function StudioPage() {
   const handleApplyVoice = () => {
     if (previewVoiceUrl) {
       setAudio(previewVoiceUrl);
-      setCaptions([]);
+      setCaptions([]); // Reset captions to force regeneration aligned with new audio
       setPreviewVoiceUrl(null);
       saveProject();
-      console.log('✅ Voiceover applied to timeline');
     }
   };
 
