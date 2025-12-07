@@ -1,3 +1,4 @@
+// src/core/stores/useTimelineStore.ts - ENHANCED WITH CLIPBOARD
 import { create } from 'zustand';
 
 export interface Caption {
@@ -20,10 +21,10 @@ export interface CaptionStyle {
 
 export interface VoiceSettings {
   voiceId: string;
-  speed: number; // 0.5 to 2.0
-  pitch: number; // 0.5 to 2.0
-  stability: number; // 0 to 1
-  similarityBoost: number; // 0 to 1
+  speed: number;
+  pitch: number;
+  stability: number;
+  similarityBoost: number;
 }
 
 export interface MediaAsset {
@@ -48,6 +49,13 @@ export interface Project {
   lastSaved: Date;
 }
 
+// Clipboard interface
+interface ClipboardData {
+  type: 'video' | 'audio' | 'caption';
+  data: any;
+  index?: number;
+}
+
 interface TimelineState extends Project {
   // Playback
   isPlaying: boolean;
@@ -55,9 +63,10 @@ interface TimelineState extends Project {
   fps: number;
   zoomLevel: number;
   
-  // Editing flags
+  // Editing
   hasUnsavedChanges: boolean;
   isAutoSaving: boolean;
+  clipboard: ClipboardData | null;
 
   // Actions
   setOriginalVideo: (url: string) => void;
@@ -76,6 +85,15 @@ interface TimelineState extends Project {
   setIsPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
   setZoomLevel: (zoom: number) => void;
+  
+  // Clipboard & Editing operations
+  copyClip: (type: string, index?: number) => void;
+  cutClip: (type: string, index?: number) => void;
+  pasteClip: (atTime: number) => void;
+  deleteClip: (type: string, index?: number) => void;
+  splitClipAtPlayhead: (time: number) => void;
+  
+  // Project management
   saveProject: () => void;
   loadProject: (projectId: string) => void;
   updateProjectName: (name: string) => void;
@@ -84,7 +102,7 @@ interface TimelineState extends Project {
 
 const defaultCaptionStyle: CaptionStyle = {
   color: '#FFFFFF',
-  fontSize: 42, // Increased default size for better visibility
+  fontSize: 42,
   fontFamily: 'Inter, sans-serif',
   fontWeight: 'bold',
   textAlign: 'center',
@@ -94,7 +112,7 @@ const defaultCaptionStyle: CaptionStyle = {
 };
 
 const defaultVoiceSettings: VoiceSettings = {
-  voiceId: 'pNInz6obpgDQGcFmaJgB', // Adam
+  voiceId: 'pNInz6obpgDQGcFmaJgB',
   speed: 1.0,
   pitch: 1.0,
   stability: 0.5,
@@ -120,6 +138,7 @@ const initialState = {
   lastSaved: new Date(),
   hasUnsavedChanges: false,
   isAutoSaving: false,
+  clipboard: null,
 };
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
@@ -138,7 +157,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   addMediaToLibrary: (file, url) => set((state) => {
-    // Check duplicates
     const exists = state.mediaLibrary.some(m => m.name === file.name);
     if (exists) return {};
 
@@ -170,12 +188,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   setVideoTrim: (start, end) => {
-    const state = get();
-    // Allow start to be 0 or greater, but not less than 0
     const validStart = Math.max(0, start);
-    // Ensure end is always after start (min 0.5s duration)
-    // We also cap it at the video total duration if that info is available, 
-    // but here we just ensure basic logical consistency.
     const validEnd = Math.max(validStart + 0.5, end);
     
     set({ 
@@ -256,9 +269,139 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
   
   setZoomLevel: (zoomLevel) => {
-    const clamped = Math.max(10, Math.min(200, zoomLevel));
+    const clamped = Math.max(10, Math.min(300, zoomLevel));
     set({ zoomLevel: clamped });
   },
+
+  // ========== CLIPBOARD & EDITING OPERATIONS ==========
+
+  copyClip: (type, index) => {
+    const state = get();
+    let data = null;
+
+    if (type === 'video' && state.originalVideoUrl) {
+      data = {
+        url: state.originalVideoUrl,
+        trim: { ...state.videoTrim }
+      };
+    } else if (type === 'audio' && state.audioUrl) {
+      data = { url: state.audioUrl };
+    } else if (type === 'caption' && index !== undefined && state.captions[index]) {
+      data = { ...state.captions[index] };
+    }
+
+    if (data) {
+      set({ 
+        clipboard: { type: type as any, data, index },
+        hasUnsavedChanges: true 
+      });
+    }
+  },
+
+  cutClip: (type, index) => {
+    const state = get();
+    
+    // First copy
+    state.copyClip(type, index);
+    
+    // Then delete
+    state.deleteClip(type, index);
+  },
+
+  pasteClip: (atTime) => {
+    const state = get();
+    
+    if (!state.clipboard) {
+      console.warn('Clipboard is empty');
+      return;
+    }
+
+    const { type, data } = state.clipboard;
+
+    if (type === 'caption') {
+      // Paste caption at current time
+      const duration = data.end - data.start;
+      const newCaption: Caption = {
+        ...data,
+        start: atTime,
+        end: atTime + duration
+      };
+      
+      set((s) => ({
+        captions: [...s.captions, newCaption].sort((a, b) => a.start - b.start),
+        hasUnsavedChanges: true
+      }));
+    } else if (type === 'audio') {
+      // For now, replace audio (could be enhanced to support multiple audio tracks)
+      set({ audioUrl: data.url, hasUnsavedChanges: true });
+    }
+    // Video pasting is more complex - would need multi-track support
+  },
+
+  deleteClip: (type, index) => {
+    const state = get();
+
+    if (type === 'video') {
+      // Clear video
+      set({ 
+        originalVideoUrl: null, 
+        videoTrim: { start: 0, end: 60 },
+        hasUnsavedChanges: true 
+      });
+    } else if (type === 'audio') {
+      // Clear audio
+      set({ audioUrl: null, hasUnsavedChanges: true });
+    } else if (type === 'caption' && index !== undefined) {
+      // Delete caption
+      set((s) => ({
+        captions: s.captions.filter((_, i) => i !== index),
+        hasUnsavedChanges: true
+      }));
+    }
+  },
+
+  splitClipAtPlayhead: (time) => {
+    const state = get();
+
+    // Find caption at playhead
+    const captionIndex = state.captions.findIndex(
+      c => time >= c.start && time <= c.end
+    );
+
+    if (captionIndex !== -1) {
+      const caption = state.captions[captionIndex];
+      
+      // Split caption into two
+      const firstPart: Caption = {
+        ...caption,
+        end: time
+      };
+      
+      const secondPart: Caption = {
+        ...caption,
+        start: time
+      };
+
+      const newCaptions = [...state.captions];
+      newCaptions[captionIndex] = firstPart;
+      newCaptions.splice(captionIndex + 1, 0, secondPart);
+
+      set({ captions: newCaptions, hasUnsavedChanges: true });
+    } else {
+      // Could also split video trim here
+      const { videoTrim } = state;
+      
+      if (time > videoTrim.start && time < videoTrim.end) {
+        // For now, just set trim end at playhead
+        set({ 
+          videoTrim: { start: videoTrim.start, end: time },
+          hasUnsavedChanges: true 
+        });
+      }
+    }
+  },
+
+  // ========== PROJECT MANAGEMENT ==========
 
   saveProject: () => {
     const state = get();
@@ -314,6 +457,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         zoomLevel: 30,
         hasUnsavedChanges: false,
         isAutoSaving: false,
+        clipboard: null,
       });
     } else {
       set({

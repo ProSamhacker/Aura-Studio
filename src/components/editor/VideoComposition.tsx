@@ -1,5 +1,6 @@
+// src/components/editor/VideoComposition.tsx - FIXED TRIM LOGIC
 import React from 'react';
-import { AbsoluteFill, Video, Audio, useCurrentFrame, useVideoConfig, Sequence } from 'remotion';
+import { AbsoluteFill, Video, Audio, useCurrentFrame, useVideoConfig, Img, OffthreadVideo } from 'remotion';
 
 interface CaptionStyle {
   color: string;
@@ -34,11 +35,16 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  const currentTime = frame / fps;
+  
+  // Current time in the COMPOSITION (what the user sees)
+  const compositionTime = frame / fps;
+  
+  // Current time in the SOURCE VIDEO (accounting for trim)
+  const sourceVideoTime = compositionTime + videoTrim.start;
 
-  // Find active caption
+  // Find active caption (based on composition time, NOT source time)
   const activeCaption = Array.isArray(captions) 
-    ? captions.find((c) => currentTime >= c.start && currentTime <= c.end)
+    ? captions.find((c) => compositionTime >= c.start && compositionTime <= c.end)
     : null;
 
   // Default style fallback
@@ -55,15 +61,11 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
 
   const captionStyle = activeCaption?.style || defaultStyle;
 
-  // Calculate trim frames
-  // videoStartFrame: The frame in the SOURCE video where playback should begin
-  const videoStartFrame = videoTrim ? Math.floor(videoTrim.start * fps) : 0;
-  // videoEndFrame: The frame in the SOURCE video where playback should stop
-  const videoEndFrame = videoTrim ? Math.floor(videoTrim.end * fps) : undefined;
-  // durationInFrames: How long the sequence should last on the timeline
-  const videoDurationFrames = videoTrim ? Math.floor((videoTrim.end - videoTrim.start) * fps) : undefined;
-
-  // FLEXBOX POSITIONING LOGIC
+  // CRITICAL FIX: Calculate which frame to show from source video
+  // The video component needs to know WHERE in the source video we are
+  const videoStartFrame = Math.floor(videoTrim.start * fps);
+  
+  // FLEXBOX POSITIONING
   const verticalMap = {
     top: 'justify-start pt-16',
     center: 'justify-center',
@@ -81,42 +83,55 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
       
       {/* LAYER 1: Video */}
       {videoUrl ? (
-        <Sequence from={0} durationInFrames={videoDurationFrames}>
-            <Video 
-              src={videoUrl} 
-              className="w-full h-full object-contain"
-              // Mute video track if AI audio exists to prevent audio clashes
-              volume={audioUrl ? 0 : 1}
-              startFrom={videoStartFrame}
-              endAt={videoEndFrame}
-            />
-        </Sequence>
+        <AbsoluteFill>
+          {/* 
+            CRITICAL: We use startFrom to offset into the source video
+            The frame prop tells Remotion which frame of the SOURCE to show
+            For trimmed video starting at 5s with 30fps: startFrom = 5 * 30 = 150
+            When composition frame=0, we show source frame=150
+            When composition frame=30, we show source frame=180
+          */}
+          <OffthreadVideo
+            src={videoUrl}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'contain'
+            }}
+            // Mute original audio if we have AI voiceover
+            volume={audioUrl ? 0 : 1}
+            // Start playback at the trim start point
+            startFrom={videoStartFrame}
+            // The current frame in the composition maps to source video frame
+            // Remotion handles this automatically with startFrom
+          />
+        </AbsoluteFill>
       ) : (
         <AbsoluteFill className="bg-[#111] flex items-center justify-center">
-           <span className="text-gray-500 font-mono">No Video Source</span>
+           <span className="text-gray-500 font-mono text-lg">No Video Source</span>
         </AbsoluteFill>
       )}
 
       {/* LAYER 2: AI Voiceover */}
       {audioUrl && (
         <Audio 
-            src={audioUrl} 
-            volume={1}
-            key={audioUrl} 
+          src={audioUrl} 
+          volume={1}
         />
       )}
 
-      {/* LAYER 3: Styled Captions */}
+      {/* LAYER 3: Styled Captions with Animation */}
       {activeCaption && (
         <AbsoluteFill 
           className={`flex flex-col ${verticalMap[captionStyle.position]} ${horizontalMap[captionStyle.textAlign]}`}
           style={{ opacity: captionStyle.opacity }}
         >
           <div 
-            className="px-6 py-3 rounded-xl shadow-lg backdrop-blur-sm max-w-[85%] transition-all duration-200 origin-center"
+            className="px-8 py-4 rounded-2xl shadow-2xl backdrop-blur-sm max-w-[90%] animate-in fade-in slide-in-from-bottom-2 duration-200"
             style={{
               backgroundColor: captionStyle.backgroundColor,
-              transform: `scale(${1 + (activeCaption.text.length > 50 ? -0.1 : 0)})`
+              // Subtle scale animation based on caption length
+              transform: `scale(${1 - (activeCaption.text.length > 60 ? 0.05 : 0)})`
             }}
           >
             <p 
@@ -128,7 +143,8 @@ export const VideoComposition: React.FC<VideoCompositionProps> = ({
                 textAlign: captionStyle.textAlign,
                 margin: 0,
                 lineHeight: 1.4,
-                textShadow: '0px 2px 4px rgba(0,0,0,0.8)',
+                textShadow: '0px 3px 6px rgba(0,0,0,0.9), 0px 1px 3px rgba(0,0,0,0.8)',
+                letterSpacing: '0.02em'
               }}
             >
               {activeCaption.text}
